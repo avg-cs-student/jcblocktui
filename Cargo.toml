@@ -1,0 +1,13 @@
+[package]
+name = "tui-demo-rs"
+version = "0.1.0"
+description = "First time trying ratatui"
+authors = ["Justin Cromer <justincromer@gmail.com>"]
+license = "MIT"
+edition = "2024"
+
+[dependencies]
+crossterm = "0.28.1"
+ratatui = "0.29.0"
+color-eyre = "0.6.3"
+blast = { path = "../blast/", version = "0.1.0" }
