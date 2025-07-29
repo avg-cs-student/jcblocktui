@@ -1,14 +1,21 @@
+use blast::{
+    blocks::{self, Point},
+    canvas::PointStatus,
+    game::Game,
+};
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::Stylize,
     symbols::border,
     text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, BorderType, Paragraph, Widget},
 };
+
+const BLOCK_REPRESENTATION: &str = "▅";
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -18,14 +25,47 @@ fn main() -> color_eyre::Result<()> {
     result
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
+enum DisplayPointStatus {
+    Occupied,
+    Unoccupied,
+    Hovered { has_conflict: bool },
+}
+
+#[derive(Debug)]
 pub struct App {
     exit: bool,
+    game: Game,
+    blocks: Vec<blocks::Block>,
+    selected_block: blocks::Block,
+    cursor_position: Point,
+    center: Point,
+    board_width: i32,
+    board_height: i32,
 }
 
 impl App {
     pub fn new() -> Self {
-        Self::default()
+        let game = Game::default();
+        let board_height = game.canvas.rows as i32;
+        let board_width = game.canvas.columns as i32;
+        let mut blocks = game.generate_blocks(3);
+        let selected_block = blocks.pop().expect("Should have a block available.");
+        let center = Point {
+            x: board_width / 2,
+            y: board_height / 2,
+        };
+
+        Self {
+            exit: false,
+            game,
+            blocks,
+            selected_block,
+            cursor_position: center.clone(),
+            center,
+            board_width,
+            board_height,
+        }
     }
 
     /// Run the application's main loop.
@@ -55,8 +95,85 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        let is_selected_block_within_boundary = |cursor: &Point| {
+            for p in self.selected_block.coordinates() {
+                if p.x + cursor.x >= self.board_width || p.x + cursor.x < 0 {
+                    return false;
+                }
+                if p.y + cursor.y >= self.board_height || p.y + cursor.y < 0 {
+                    return false;
+                }
+            }
+
+            true
+        };
+
         match key_event.code {
+            // quit
             KeyCode::Char('q') => self.exit(),
+            // place block
+            KeyCode::Char(' ') => {
+                let Point { y: row, x: column } = self.cursor_position;
+                if let Ok(()) = self
+                    .game
+                    .maybe_place_block(&self.selected_block, row, column)
+                {
+                    if self.blocks.len() < 1 {
+                        self.blocks = self.game.generate_blocks(3)
+                    }
+                    self.selected_block =
+                        self.blocks.pop().expect("Should have a block available.");
+                    self.cursor_position = self.center.clone();
+                }
+            }
+            // cursor left
+            KeyCode::Char('h') | KeyCode::Left => {
+                let maybe_new_cursor_position = Point {
+                    x: self.cursor_position.x - 1,
+                    y: self.cursor_position.y,
+                };
+                if is_selected_block_within_boundary(&maybe_new_cursor_position) {
+                    self.cursor_position = maybe_new_cursor_position;
+                }
+            }
+
+            // TODO: add vim shortcuts like 0, $, gg, G
+
+            // cursor down
+            KeyCode::Char('j') | KeyCode::Down => {
+                let maybe_new_cursor_position = Point {
+                    x: self.cursor_position.x,
+                    y: self.cursor_position.y - 1,
+                };
+                if is_selected_block_within_boundary(&maybe_new_cursor_position) {
+                    self.cursor_position = maybe_new_cursor_position;
+                }
+            }
+            // cursor up
+            KeyCode::Char('k') | KeyCode::Up => {
+                let maybe_new_cursor_position = Point {
+                    x: self.cursor_position.x,
+                    y: self.cursor_position.y + 1,
+                };
+                if is_selected_block_within_boundary(&maybe_new_cursor_position) {
+                    self.cursor_position = maybe_new_cursor_position;
+                }
+            }
+            // cursor right
+            KeyCode::Char('l') | KeyCode::Right => {
+                let maybe_new_cursor_position = Point {
+                    x: self.cursor_position.x + 1,
+                    y: self.cursor_position.y,
+                };
+                if is_selected_block_within_boundary(&maybe_new_cursor_position) {
+                    self.cursor_position = maybe_new_cursor_position;
+                }
+            }
+            // cycle block selection
+            KeyCode::Char('n') => {
+                self.blocks.insert(0, self.selected_block.clone());
+                self.selected_block = self.blocks.pop().expect("Should have a block available.");
+            }
             _ => {}
         }
     }
@@ -68,25 +185,122 @@ impl App {
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(" The Game ".bold());
+        // Outermost layout
+        let title = Line::from(" Terminal Blast ".bold());
+        let score = Line::from(format!(" Current Score: {} ", self.game.score).bold());
         let instructions = Line::from(vec![
             " Quit ".into(),
-            "<Q> ".blue().bold(),
+            "<q> ".blue().bold(),
             " Movement ".into(),
             "<h,j,k,l> ".blue().bold(),
-            " Switch Panes ".into(),
-            "<Tab> ".blue().bold(),
+            " Cycle Block Selection ".into(),
+            "<n> ".blue().bold(),
+            " Place Block ".into(),
+            "<Space> ".blue().bold(),
         ]);
         let block = Block::bordered()
-            .title(title.centered())
+            .title(title.left_aligned())
+            .title(score.centered())
             .title_bottom(instructions.centered())
-            .border_set(border::THICK);
+            .border_set(border::THICK)
+            .border_type(BorderType::Rounded);
+        Paragraph::default().block(block).render(area, buf);
 
-        let counter_text = Text::from(vec![Line::from(vec!["Value: ".into(), "wat!".yellow()])]);
+        // Main content
+        let areas = Layout::vertical([
+            Constraint::Percentage(10),
+            Constraint::Length(self.game.canvas.rows as u16),
+            Constraint::Percentage(0),
+            Constraint::Percentage(15),
+            Constraint::Percentage(40),
+        ])
+        .vertical_margin(5)
+        .flex(ratatui::layout::Flex::Center)
+        .split(area);
 
-        Paragraph::new(counter_text)
+        // Gameboard layout
+        let [game_container] =
+            Layout::horizontal([Constraint::Length((self.board_width * 2) as u16)])
+                .flex(ratatui::layout::Flex::Center)
+                .areas(areas[1]);
+
+        let game_rows = Layout::vertical(vec![Constraint::default(); self.board_height as usize])
+            .flex(ratatui::layout::Flex::Center)
+            .split(game_container);
+
+        // Get the current state of each coordinate within the playing area.
+        let mut display_coords: Vec<DisplayPointStatus> = self
+            .game
+            .canvas
+            .contents()
+            .iter()
+            .map(|p| {
+                if let PointStatus::Occupied = p {
+                    return DisplayPointStatus::Occupied;
+                }
+                DisplayPointStatus::Unoccupied
+            })
+            .collect();
+
+        // Overlay the currently selected block, taking into account the user's cursor position.
+        for p in self.selected_block.coordinates() {
+            let index = ((p.y + self.cursor_position.y) * self.board_width
+                + (p.x + self.cursor_position.x)) as usize;
+
+            display_coords[index] = match display_coords[index] {
+                DisplayPointStatus::Occupied => DisplayPointStatus::Hovered { has_conflict: true },
+                DisplayPointStatus::Unoccupied => DisplayPointStatus::Hovered {
+                    has_conflict: false,
+                },
+                _ => panic!("Unreachable."),
+            }
+        }
+
+        // Render the game board.
+        for (i, row) in game_rows.iter().rev().enumerate() {
+            let game_cols =
+                Layout::horizontal(vec![Constraint::default(); self.board_width as usize])
+                    .vertical_margin(0)
+                    .split(*row);
+
+            for (j, col) in game_cols.iter().enumerate() {
+                let repr = match display_coords[i * self.board_width as usize + j] {
+                    DisplayPointStatus::Occupied => Text::from(BLOCK_REPRESENTATION).green(),
+                    DisplayPointStatus::Unoccupied => Text::from(BLOCK_REPRESENTATION).dark_gray(),
+                    DisplayPointStatus::Hovered { has_conflict: true } => {
+                        Text::from(BLOCK_REPRESENTATION).red()
+                    }
+                    DisplayPointStatus::Hovered {
+                        has_conflict: false,
+                    } => Text::from(BLOCK_REPRESENTATION).cyan(),
+                };
+                Paragraph::new(repr).centered().render(*col, buf);
+            }
+        }
+
+        // remaining blocks view
+        let block_areas = Layout::horizontal([
+            Constraint::Percentage(12), // spacing
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(12), // spacing
+        ])
+        .horizontal_margin(15)
+        .flex(ratatui::layout::Flex::Center)
+        .split(areas[4]);
+
+        // account for spacing
+        let offset = 1;
+        for (i, b) in self.blocks.iter().enumerate() {
+            let blocks = Text::from(format!("{}", b));
+            Paragraph::new(blocks).render(block_areas[i + offset], buf);
+        }
+
+        // selected block preview
+        let selected_block_str = Text::from(format!("{}", self.selected_block)).cyan();
+        Paragraph::new(selected_block_str)
             .centered()
-            .block(block)
-            .render(area, buf);
+            .render(block_areas[block_areas.len() - 1 - offset], buf);
     }
 }
