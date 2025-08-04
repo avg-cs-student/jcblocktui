@@ -16,6 +16,7 @@ use ratatui::{
 };
 
 const BLOCK_REPRESENTATION: &str = "▅";
+const CONFLICT_REPRESENTATION: &str = "✗";
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -30,6 +31,7 @@ enum DisplayPointStatus {
     Occupied,
     Unoccupied,
     Hovered { has_conflict: bool },
+    Blast,
 }
 
 #[derive(Debug)]
@@ -137,8 +139,6 @@ impl App {
                 }
             }
 
-            // TODO: add vim shortcuts like 0, $, gg, G
-
             // cursor down
             KeyCode::Char('j') | KeyCode::Down => {
                 let maybe_new_cursor_position = Point {
@@ -173,6 +173,7 @@ impl App {
             KeyCode::Char('n') => {
                 self.blocks.insert(0, self.selected_block.clone());
                 self.selected_block = self.blocks.pop().expect("Should have a block available.");
+                self.cursor_position = self.center.clone();
             }
             _ => {}
         }
@@ -243,16 +244,55 @@ impl Widget for &App {
             .collect();
 
         // Overlay the currently selected block, taking into account the user's cursor position.
+        let mut has_conflicts = false;
         for p in self.selected_block.coordinates() {
             let index = ((p.y + self.cursor_position.y) * self.board_width
                 + (p.x + self.cursor_position.x)) as usize;
 
             display_coords[index] = match display_coords[index] {
-                DisplayPointStatus::Occupied => DisplayPointStatus::Hovered { has_conflict: true },
+                DisplayPointStatus::Occupied => {
+                    has_conflicts = true;
+                    DisplayPointStatus::Hovered { has_conflict: true }
+                }
                 DisplayPointStatus::Unoccupied => DisplayPointStatus::Hovered {
                     has_conflict: false,
                 },
                 _ => panic!("Unreachable."),
+            }
+        }
+
+        // If there are no conflicts, show any lines that would be blasted if the block were placed.
+        if !has_conflicts {
+            'row_loop: for row in 0..self.board_height {
+                for column in 0..self.board_width {
+                    let index = (row * self.board_width + column) as usize;
+                    if let DisplayPointStatus::Unoccupied
+                    | DisplayPointStatus::Hovered { has_conflict: true } = display_coords[index]
+                    {
+                        continue 'row_loop;
+                    }
+                }
+
+                for column in 0..self.board_width {
+                    let index = (row * self.board_width + column) as usize;
+                    display_coords[index] = DisplayPointStatus::Blast;
+                }
+            }
+
+            'column_loop: for column in 0..self.board_width {
+                for row in 0..self.board_height {
+                    let index = (row * self.board_width + column) as usize;
+                    if let DisplayPointStatus::Unoccupied
+                    | DisplayPointStatus::Hovered { has_conflict: true } = display_coords[index]
+                    {
+                        continue 'column_loop;
+                    }
+                }
+
+                for row in 0..self.board_height {
+                    let index = (row * self.board_width + column) as usize;
+                    display_coords[index] = DisplayPointStatus::Blast;
+                }
             }
         }
 
@@ -265,14 +305,15 @@ impl Widget for &App {
 
             for (j, col) in game_cols.iter().enumerate() {
                 let repr = match display_coords[i * self.board_width as usize + j] {
+                    DisplayPointStatus::Blast => Text::from(BLOCK_REPRESENTATION).red(),
                     DisplayPointStatus::Occupied => Text::from(BLOCK_REPRESENTATION).green(),
                     DisplayPointStatus::Unoccupied => Text::from(BLOCK_REPRESENTATION).dark_gray(),
-                    DisplayPointStatus::Hovered { has_conflict: true } => {
-                        Text::from(BLOCK_REPRESENTATION).red()
-                    }
                     DisplayPointStatus::Hovered {
                         has_conflict: false,
                     } => Text::from(BLOCK_REPRESENTATION).cyan(),
+                    DisplayPointStatus::Hovered { has_conflict: true } => {
+                        Text::from(CONFLICT_REPRESENTATION).red()
+                    }
                 };
                 Paragraph::new(repr).centered().render(*col, buf);
             }
