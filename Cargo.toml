@@ -1,7 +1,7 @@
 [package]
-name = "tui-demo-rs"
+name = "blocktui"
 version = "0.1.0"
-description = "First time trying ratatui"
+description = "A TUI Block Game"
 authors = ["Justin Cromer <justincromer@gmail.com>"]
 license = "MIT"
 edition = "2024"
@@ -10,4 +10,4 @@ edition = "2024"
 crossterm = "0.28.1"
 ratatui = "0.29.0"
 color-eyre = "0.6.3"
-blast = { path = "../blast/", version = "0.1.0" }
+blocks = { path = "../blocks/", version = "0.1.0" }

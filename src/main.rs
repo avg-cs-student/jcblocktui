@@ -1,8 +1,9 @@
-use blast::{
-    blocks::{self, Point},
+use blocks::{
     canvas::PointStatus,
     game::Game,
+    block::{self, Point},
 };
+
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -38,8 +39,8 @@ enum DisplayPointStatus {
 pub struct App {
     exit: bool,
     game: Game,
-    blocks: Vec<blocks::Block>,
-    selected_block: blocks::Block,
+    blocks: Vec<block::Block>,
+    selected_block: block::Block,
     cursor_position: Point,
     center: Point,
     board_width: i32,
