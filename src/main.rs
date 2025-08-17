@@ -1,19 +1,13 @@
 use blocks::{
+    block::{self, Point},
     canvas::PointStatus,
     game::Game,
-    block::{self, Point},
 };
 
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    DefaultTerminal, Frame,
-    buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
-    style::Stylize,
-    symbols::border,
-    text::{Line, Text},
-    widgets::{Block, BorderType, Paragraph, Widget},
+    buffer::Buffer, layout::{Constraint, Layout, Rect}, style::Stylize, symbols::border, text::{Line, Text}, widgets::{Block, BorderType, Clear, Paragraph, Widget}, DefaultTerminal, Frame
 };
 
 const BLOCK_REPRESENTATION: &str = "▅";
@@ -38,6 +32,7 @@ enum DisplayPointStatus {
 #[derive(Debug)]
 pub struct App {
     exit: bool,
+    game_over: bool,
     game: Game,
     blocks: Vec<block::Block>,
     selected_block: block::Block,
@@ -52,7 +47,9 @@ impl App {
         let game = Game::default();
         let board_height = game.canvas.rows as i32;
         let board_width = game.canvas.columns as i32;
-        let mut blocks = game.generate_blocks(3);
+        let mut blocks = game
+            .generate_blocks(3)
+            .expect("Should be able to generate blocks for an empty canvas.");
         let selected_block = blocks.pop().expect("Should have a block available.");
         let center = Point {
             x: board_width / 2,
@@ -61,6 +58,7 @@ impl App {
 
         Self {
             exit: false,
+            game_over: false,
             game,
             blocks,
             selected_block,
@@ -82,6 +80,9 @@ impl App {
     }
 
     fn draw(&self, frame: &mut Frame) {
+        if self.game_over {
+            frame.render_widget(Clear, frame.area());
+        }
         frame.render_widget(self, frame.area());
     }
 
@@ -114,21 +115,34 @@ impl App {
         match key_event.code {
             // quit
             KeyCode::Char('q') => self.exit(),
+
             // place block
             KeyCode::Char(' ') => {
                 let Point { y: row, x: column } = self.cursor_position;
-                if let Ok(()) = self
-                    .game
-                    .maybe_place_block(&self.selected_block, row, column)
-                {
-                    if self.blocks.len() < 1 {
-                        self.blocks = self.game.generate_blocks(3)
+                let _ = self.game.maybe_place_block(&self.selected_block, row, column);
+                if self.blocks.len() < 1 {
+                    // todo: replace 3 with config info
+                    match self.game.generate_blocks(3) {
+                        Some(blocks) => self.blocks = blocks,
+                        None => unreachable!("There is always a combination that will work."),
                     }
-                    self.selected_block =
-                        self.blocks.pop().expect("Should have a block available.");
-                    self.cursor_position = self.center.clone();
                 }
+
+                // check if the game can make progress.
+                let mut can_fit_at_least_one = false;
+                for block in self.blocks.iter() {
+                    if self.game.canvas.can_fit(&block).is_some() {
+                        can_fit_at_least_one = true;
+                        break;
+                    }
+                }
+                self.game_over = !can_fit_at_least_one;
+
+                // We've already made sure self.blocks has at least 1 block available.
+                self.selected_block = self.blocks.pop().unwrap();
+                self.cursor_position = self.center.clone();
             }
+
             // cursor left
             KeyCode::Char('h') | KeyCode::Left => {
                 let maybe_new_cursor_position = Point {
@@ -150,6 +164,7 @@ impl App {
                     self.cursor_position = maybe_new_cursor_position;
                 }
             }
+
             // cursor up
             KeyCode::Char('k') | KeyCode::Up => {
                 let maybe_new_cursor_position = Point {
@@ -160,6 +175,7 @@ impl App {
                     self.cursor_position = maybe_new_cursor_position;
                 }
             }
+
             // cursor right
             KeyCode::Char('l') | KeyCode::Right => {
                 let maybe_new_cursor_position = Point {
@@ -170,12 +186,19 @@ impl App {
                     self.cursor_position = maybe_new_cursor_position;
                 }
             }
+
             // cycle block selection
             KeyCode::Char('n') => {
                 self.blocks.insert(0, self.selected_block.clone());
                 self.selected_block = self.blocks.pop().expect("Should have a block available.");
                 self.cursor_position = self.center.clone();
             }
+
+            // todo!
+            // KeyCode::Char('N') => {
+            //     self.reset();
+            // }
+
             _ => {}
         }
     }
@@ -219,6 +242,14 @@ impl Widget for &App {
         .vertical_margin(5)
         .flex(ratatui::layout::Flex::Center)
         .split(area);
+
+        // early exit
+        if self.game_over {
+            let game_over_str = Text::from(format!("{}", "GAME OVER")).red();
+            Paragraph::new(game_over_str)
+                .centered()
+                .render(areas[0], buf);
+        }
 
         // Gameboard layout
         let [game_container] =
