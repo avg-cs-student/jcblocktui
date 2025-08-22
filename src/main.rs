@@ -7,7 +7,13 @@ use blocks::{
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    buffer::Buffer, layout::{Constraint, Layout, Rect}, style::Stylize, symbols::border, text::{Line, Text}, widgets::{Block, BorderType, Clear, Paragraph, Widget}, DefaultTerminal, Frame
+    DefaultTerminal, Frame,
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    style::Stylize,
+    symbols::border,
+    text::{Line, Text},
+    widgets::{Block, BorderType, Clear, Paragraph, Widget},
 };
 
 const BLOCK_REPRESENTATION: &str = "▅";
@@ -52,8 +58,8 @@ impl App {
             .expect("Should be able to generate blocks for an empty canvas.");
         let selected_block = blocks.pop().expect("Should have a block available.");
         let center = Point {
-            x: board_width / 2,
-            y: board_height / 2,
+            x: board_width / 2 - 1,
+            y: board_height / 2 - 1,
         };
 
         Self {
@@ -119,28 +125,33 @@ impl App {
             // place block
             KeyCode::Char(' ') => {
                 let Point { y: row, x: column } = self.cursor_position;
-                let _ = self.game.maybe_place_block(&self.selected_block, row, column);
-                if self.blocks.len() < 1 {
-                    // todo: replace 3 with config info
-                    match self.game.generate_blocks(3) {
-                        Some(blocks) => self.blocks = blocks,
-                        None => unreachable!("There is always a combination that will work."),
+                if self
+                    .game
+                    .maybe_place_block(&self.selected_block, row, column)
+                    .is_ok()
+                {
+                    if self.blocks.len() < 1 {
+                        // todo: replace 3 with config info
+                        match self.game.generate_blocks(3) {
+                            Some(blocks) => self.blocks = blocks,
+                            None => unreachable!("There is always a combination that will work."),
+                        }
                     }
-                }
 
-                // check if the game can make progress.
-                let mut can_fit_at_least_one = false;
-                for block in self.blocks.iter() {
-                    if self.game.canvas.can_fit(&block).is_some() {
-                        can_fit_at_least_one = true;
-                        break;
+                    // check if the game can make progress.
+                    let mut can_fit_at_least_one = false;
+                    for block in self.blocks.iter() {
+                        if let Some(p) = self.game.canvas.can_fit(&block) {
+                            can_fit_at_least_one = true;
+                            break;
+                        }
                     }
-                }
-                self.game_over = !can_fit_at_least_one;
+                    self.game_over = !can_fit_at_least_one;
 
-                // We've already made sure self.blocks has at least 1 block available.
-                self.selected_block = self.blocks.pop().unwrap();
-                self.cursor_position = self.center.clone();
+                    // We've already made sure self.blocks has at least 1 block available.
+                    self.selected_block = self.blocks.pop().unwrap();
+                    self.cursor_position = self.center.clone();
+                }
             }
 
             // cursor left
@@ -198,7 +209,6 @@ impl App {
             // KeyCode::Char('N') => {
             //     self.reset();
             // }
-
             _ => {}
         }
     }
@@ -339,7 +349,7 @@ impl Widget for &App {
                 let repr = match display_coords[i * self.board_width as usize + j] {
                     DisplayPointStatus::Blast => Text::from(BLOCK_REPRESENTATION).red(),
                     DisplayPointStatus::Occupied => Text::from(BLOCK_REPRESENTATION).green(),
-                    DisplayPointStatus::Unoccupied => Text::from(BLOCK_REPRESENTATION).dark_gray(),
+                    DisplayPointStatus::Unoccupied => Text::from(BLOCK_REPRESENTATION).black(),
                     DisplayPointStatus::Hovered {
                         has_conflict: false,
                     } => Text::from(BLOCK_REPRESENTATION).cyan(),
@@ -347,7 +357,13 @@ impl Widget for &App {
                         Text::from(CONFLICT_REPRESENTATION).red()
                     }
                 };
-                Paragraph::new(repr).centered().render(*col, buf);
+
+                // FIXME: game over screen isnt my favorit.
+                Paragraph::new(|| -> Text<'_> {
+                    if self.game_over { repr.gray() } else { repr }
+                }())
+                .centered()
+                .render(*col, buf);
             }
         }
 
