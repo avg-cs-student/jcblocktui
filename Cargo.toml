@@ -1,10 +1,12 @@
 [package]
 name = "jcblocktui"
 version = "0.1.0"
-description = "A TUI Block Game"
-authors = ["Justin Cromer"]
-license = "MIT"
 edition = "2024"
+authors = ["Justin Cromer"]
+description = "A TUI Block Game"
+readme = "README.md"
+repository = "https://github.com/avg-cs-student/jcblocktui"
+license = "MIT"
 
 [dependencies]
 crossterm = "0.28.1"
