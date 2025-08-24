@@ -54,7 +54,7 @@ impl App {
         let game = Game::default();
 
         // block coordinates include negative numbers, so having these as i32 just reduces the
-        // number of casts we have to do later, albeit comes up a lot anyways :(
+        // number of casts we have to do later.
         let board_height = game.canvas.rows as i32;
         let board_width = game.canvas.columns as i32;
 
@@ -82,6 +82,16 @@ impl App {
             board_width,
             board_height,
         }
+    }
+
+    fn reset(&mut self) {
+        self.game.reset();
+        self.game_over = false;
+        self.blocks = self
+            .game
+            .generate_blocks(NUM_BLOCKS_PER_TURN)
+            .expect("Should be able to generate blocks for an empty canvas.");
+        self.selected_block = self.blocks.pop().expect("Should have a block available.");
     }
 
     /// Run the application's main loop.
@@ -217,7 +227,11 @@ impl App {
                 self.cursor_position = self.center.clone();
             }
 
-            // TODO: presently, a player must ctrl-c when the game is over, that sucks
+            KeyCode::Enter => {
+                if self.game_over {
+                    self.reset();
+                }
+            }
             _ => {}
         }
     }
@@ -252,23 +266,20 @@ impl Widget for &App {
 
         // Main content
         let areas = Layout::vertical([
+            // spacing or game over text
             Constraint::Percentage(10),
+            // game board
             Constraint::Length(self.game.canvas.rows as u16),
+            // spacer
             Constraint::Percentage(0),
+            // next blocks
             Constraint::Percentage(15),
+            // nominally empty, useful for dumping debug info
             Constraint::Percentage(40),
         ])
         .vertical_margin(5)
         .flex(ratatui::layout::Flex::Center)
         .split(area);
-
-        // early exit
-        if self.game_over {
-            let game_over_str = Text::from(format!("{}", "GAME OVER")).red();
-            Paragraph::new(game_over_str)
-                .centered()
-                .render(areas[0], buf);
-        }
 
         // Gameboard layout
         let [game_container] =
@@ -367,7 +378,7 @@ impl Widget for &App {
                     }
                 };
 
-                // FIXME: game over screen isnt my favorit.
+                // FIXME: game over screen isnt my favorite.
                 Paragraph::new(|| -> Text<'_> {
                     if self.game_over { repr.gray() } else { repr }
                 }())
@@ -400,5 +411,21 @@ impl Widget for &App {
         Paragraph::new(selected_block_str)
             .centered()
             .render(block_areas[block_areas.len() - 1 - offset], buf);
+
+        // game over view
+        if self.game_over {
+            Clear.render(areas[0], buf);
+            Clear.render(areas[2], buf);
+            Clear.render(areas[3], buf);
+            Clear.render(areas[4], buf);
+
+            let game_over_str = Text::from(format!("{}", "GAME OVER")).red();
+            Paragraph::new(game_over_str)
+                .centered()
+                .render(areas[0], buf);
+
+            let help_txt = Text::from(format!("{}", "Press ENTER to play again.")).blue();
+            Paragraph::new(help_txt).centered().render(areas[4], buf);
+        }
     }
 }
