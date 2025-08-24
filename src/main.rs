@@ -244,7 +244,7 @@ impl App {
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Outermost layout
-        let title = Line::from(" Terminal Blast ".bold());
+        let title = Line::from(" Block TUI ".bold());
         let score = Line::from(format!(" Current Score: {} ", self.game.score).bold());
         let instructions = Line::from(vec![
             " Quit ".into(),
