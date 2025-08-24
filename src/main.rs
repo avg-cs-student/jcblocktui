@@ -1,4 +1,4 @@
-use blocks::{
+use jcblocks::{
     block::{self, Point},
     canvas::PointStatus,
     game::Game,
@@ -18,6 +18,7 @@ use ratatui::{
 
 const BLOCK_REPRESENTATION: &str = "▅";
 const CONFLICT_REPRESENTATION: &str = "✗";
+const NUM_BLOCKS_PER_TURN: usize = 3;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -51,12 +52,20 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let game = Game::default();
+
+        // block coordinates include negative numbers, so having these as i32 just reduces the
+        // number of casts we have to do later, albeit comes up a lot anyways :(
         let board_height = game.canvas.rows as i32;
         let board_width = game.canvas.columns as i32;
+
+        // the player always has one selected block and zero or more additional blocks.
         let mut blocks = game
-            .generate_blocks(3)
+            .generate_blocks(NUM_BLOCKS_PER_TURN)
             .expect("Should be able to generate blocks for an empty canvas.");
         let selected_block = blocks.pop().expect("Should have a block available.");
+
+        // noting the center position is useful as it gives a place to initially place blocks where
+        // they are ~guaranteed to fit without wrap
         let center = Point {
             x: board_width / 2 - 1,
             y: board_height / 2 - 1,
@@ -105,6 +114,8 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        // moving a block could result in part of it escaping the playing board, this helper is for
+        // checking that condition
         let is_selected_block_within_boundary = |cursor: &Point| {
             for p in self.selected_block.coordinates() {
                 if p.x + cursor.x >= self.board_width || p.x + cursor.x < 0 {
@@ -125,14 +136,15 @@ impl App {
             // place block
             KeyCode::Char(' ') => {
                 let Point { y: row, x: column } = self.cursor_position;
+
+                // attempt to place the block
                 if self
                     .game
                     .maybe_place_block(&self.selected_block, row, column)
                     .is_ok()
                 {
                     if self.blocks.len() < 1 {
-                        // todo: replace 3 with config info
-                        match self.game.generate_blocks(3) {
+                        match self.game.generate_blocks(NUM_BLOCKS_PER_TURN) {
                             Some(blocks) => self.blocks = blocks,
                             None => unreachable!("There is always a combination that will work."),
                         }
@@ -141,7 +153,7 @@ impl App {
                     // check if the game can make progress.
                     let mut can_fit_at_least_one = false;
                     for block in self.blocks.iter() {
-                        if let Some(p) = self.game.canvas.can_fit(&block) {
+                        if self.game.canvas.can_fit(&block).is_some() {
                             can_fit_at_least_one = true;
                             break;
                         }
@@ -205,10 +217,7 @@ impl App {
                 self.cursor_position = self.center.clone();
             }
 
-            // todo!
-            // KeyCode::Char('N') => {
-            //     self.reset();
-            // }
+            // TODO: presently, a player must ctrl-c when the game is over, that sucks
             _ => {}
         }
     }

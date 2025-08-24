@@ -51,23 +51,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
-name = "blocks"
-version = "0.1.0"
-dependencies = [
- "rand",
-]
-
-[[package]]
-name = "blocktui"
-version = "0.1.0"
-dependencies = [
- "blocks",
- "color-eyre",
- "crossterm",
- "ratatui",
-]
-
-[[package]]
 name = "cassowary"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -313,6 +296,25 @@ name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+
+[[package]]
+name = "jcblocks"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2813fcfad6dc4d185e473907a754726ba3669e137773985febbce8f342a1f228"
+dependencies = [
+ "rand",
+]
+
+[[package]]
+name = "jcblocktui"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "crossterm",
+ "jcblocks",
+ "ratatui",
+]
 
 [[package]]
 name = "lazy_static"
