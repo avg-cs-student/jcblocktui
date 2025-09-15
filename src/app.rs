@@ -159,6 +159,10 @@ impl App {
 
             // cursor left
             KeyCode::Char('h') | KeyCode::Left => {
+                if self.game_over {
+                    return;
+                }
+
                 let maybe_new_cursor_position = Point {
                     x: self.cursor_position.x - 1,
                     y: self.cursor_position.y,
@@ -170,6 +174,10 @@ impl App {
 
             // cursor down
             KeyCode::Char('j') | KeyCode::Down => {
+                if self.game_over {
+                    return;
+                }
+
                 let maybe_new_cursor_position = Point {
                     x: self.cursor_position.x,
                     y: self.cursor_position.y - 1,
@@ -181,6 +189,10 @@ impl App {
 
             // cursor up
             KeyCode::Char('k') | KeyCode::Up => {
+                if self.game_over {
+                    return;
+                }
+
                 let maybe_new_cursor_position = Point {
                     x: self.cursor_position.x,
                     y: self.cursor_position.y + 1,
@@ -192,6 +204,10 @@ impl App {
 
             // cursor right
             KeyCode::Char('l') | KeyCode::Right => {
+                if self.game_over {
+                    return;
+                }
+
                 let maybe_new_cursor_position = Point {
                     x: self.cursor_position.x + 1,
                     y: self.cursor_position.y,
@@ -203,6 +219,10 @@ impl App {
 
             // cycle block selection
             KeyCode::Char('n') => {
+                if self.game_over {
+                    return;
+                }
+
                 self.selected.cycle();
                 self.cursor_position = self.center.clone();
             }
@@ -347,12 +367,14 @@ impl Widget for &App {
 
             for (j, col) in game_cols.iter().enumerate() {
                 let repr = match display_coords[i * self.board_width as usize + j] {
-                    DisplayPointStatus::Blast => Text::from(BLOCK_REPRESENTATION).red(),
-                    DisplayPointStatus::Occupied => Text::from(BLOCK_REPRESENTATION).green(),
-                    DisplayPointStatus::Unoccupied => Text::from(BLOCK_REPRESENTATION).black(),
+                    DisplayPointStatus::Blast => Text::from(BLOCK_REPRESENTATION).yellow(),
+                    DisplayPointStatus::Occupied => Text::from(BLOCK_REPRESENTATION).blue(),
+                    DisplayPointStatus::Unoccupied => {
+                        Text::from(EMPTY_BLOCK_REPRESENTATION).dark_gray()
+                    }
                     DisplayPointStatus::Hovered {
                         has_conflict: false,
-                    } => Text::from(BLOCK_REPRESENTATION).light_magenta(),
+                    } => Text::from(BLOCK_REPRESENTATION).magenta(),
                     DisplayPointStatus::Hovered { has_conflict: true } => {
                         Text::from(CONFLICT_REPRESENTATION).red()
                     }
@@ -381,16 +403,20 @@ impl Widget for &App {
         // account for spacing
         let offset = 1;
         for (i, b) in self.blocks.iter().enumerate() {
-            let blocks = if i == self.selected.current() {
-                Text::from(format!("{}", b)).magenta()
-            } else {
-                Text::from(format!("{}", b))
-            };
+            let mut view = Text::from(format!("{}", b));
 
-            Paragraph::new(blocks).render(block_areas[i + offset], buf);
+            // add a border to the selected block
+            view = if i == self.selected.current() {
+                view.magenta()
+            } else {
+                view.rapid_blink().black()
+            };
+            Paragraph::new(view)
+                .centered()
+                .render(block_areas[i + offset], buf);
         }
 
-        // game over view
+        // Game Over
         if self.game_over {
             Clear.render(areas[0], buf);
             Clear.render(areas[2], buf);

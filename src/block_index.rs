@@ -14,6 +14,7 @@ pub struct BlockIndex {
 }
 
 impl BlockIndex {
+    /// Construct a new block index.
     pub fn new(val: usize) -> Self {
         BlockIndex {
             val,
@@ -21,14 +22,16 @@ impl BlockIndex {
         }
     }
 
+    /// Retrieve the contained value.
     pub fn current(&self) -> usize {
         self.val
     }
 
+    /// Retrieve the contained value and decrement the internal counter.
     pub fn place(&mut self) -> usize {
         let prev = self.val;
         self.num_left = if self.num_left == 0 {
-            NUM_BLOCKS_PER_TURN
+            NUM_BLOCKS_PER_TURN - 1
         } else {
             self.num_left - 1
         };
@@ -36,6 +39,7 @@ impl BlockIndex {
         prev
     }
 
+    /// Get the next valid value.
     pub fn cycle(&mut self) -> &mut Self {
         if self.val == self.num_left {
             self.val = 0;
