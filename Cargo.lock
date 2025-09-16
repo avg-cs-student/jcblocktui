@@ -299,9 +299,9 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jcblocks"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2813fcfad6dc4d185e473907a754726ba3669e137773985febbce8f342a1f228"
+checksum = "f1265d340aa21fe9838e89478ddc8cfb9bd0313ddae863bafd3751d1bcfb97a2"
 dependencies = [
  "rand",
 ]

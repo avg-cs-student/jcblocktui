@@ -8,8 +8,8 @@ use jcblocks::{
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
-    style::Stylize,
+    layout::{Constraint, Flex, Layout, Rect},
+    style::{Modifier, Style, Stylize},
     symbols::border,
     text::{Line, Text},
     widgets::{Block, BorderType, Clear, Paragraph, Widget},
@@ -29,6 +29,7 @@ pub struct App {
     center: Point,
     board_width: i32,
     board_height: i32,
+    show_conflict_popup: bool,
 }
 
 impl App {
@@ -62,6 +63,7 @@ impl App {
             center,
             board_width,
             board_height,
+            show_conflict_popup: false,
         }
     }
 
@@ -120,6 +122,7 @@ impl App {
             true
         };
 
+        self.show_conflict_popup = false;
         match key_event.code {
             // quit
             KeyCode::Char('q') => self.exit(),
@@ -154,6 +157,8 @@ impl App {
                     }
                     self.game_over = !can_fit_at_least_one;
                     self.cursor_position = self.center.clone();
+                } else {
+                    self.show_conflict_popup = true;
                 }
             }
 
@@ -243,27 +248,6 @@ impl App {
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Outermost layout
-        let title = Line::from(" Block TUI ".bold());
-        let score = Line::from(format!(" Current Score: {} ", self.game.score).bold());
-        let instructions = Line::from(vec![
-            " Quit ".into(),
-            "<q> ".blue().bold(),
-            " Movement ".into(),
-            "<h,j,k,l> ".blue().bold(),
-            " Cycle Block Selection ".into(),
-            "<n> ".blue().bold(),
-            " Place Block ".into(),
-            "<Space> ".blue().bold(),
-        ]);
-        let block = Block::bordered()
-            .title(title.left_aligned())
-            .title(score.centered())
-            .title_bottom(instructions.centered())
-            .border_set(border::THICK)
-            .border_type(BorderType::Rounded);
-        Paragraph::default().block(block).render(area, buf);
-
         // Main content
         let areas = Layout::vertical([
             // spacing or game over text
@@ -272,13 +256,14 @@ impl Widget for &App {
             Constraint::Length(self.game.canvas.rows as u16),
             // spacer
             Constraint::Percentage(0),
+            Constraint::Percentage(10),
             // next blocks
-            Constraint::Percentage(15),
+            Constraint::Percentage(14),
             // nominally empty, useful for dumping debug info
-            Constraint::Percentage(40),
+            Constraint::Percentage(76),
         ])
         .vertical_margin(5)
-        .flex(ratatui::layout::Flex::Center)
+        .flex(Flex::Center)
         .split(area);
 
         // Gameboard layout
@@ -375,9 +360,7 @@ impl Widget for &App {
                     DisplayPointStatus::Hovered {
                         has_conflict: false,
                     } => Text::from(BLOCK_REPRESENTATION).magenta(),
-                    DisplayPointStatus::Hovered { has_conflict: true } => {
-                        Text::from(CONFLICT_REPRESENTATION).red()
-                    }
+                    DisplayPointStatus::Hovered { has_conflict: true } => Text::from("◎").red(),
                 };
 
                 // FIXME: game over screen isnt my favorite.
@@ -397,7 +380,7 @@ impl Widget for &App {
             Constraint::Percentage(18),
             Constraint::Percentage(23), // spacing
         ])
-        .flex(ratatui::layout::Flex::Center)
+        .flex(Flex::Center)
         .split(areas[4]);
 
         // account for spacing
@@ -409,11 +392,28 @@ impl Widget for &App {
             view = if i == self.selected.current() {
                 view.magenta()
             } else {
-                view.rapid_blink().black()
+                view.black()
             };
-            Paragraph::new(view)
-                .centered()
-                .render(block_areas[i + offset], buf);
+
+            if i == self.selected.current() {
+                Paragraph::new(view)
+                    .style(Style::default().add_modifier(Modifier::SLOW_BLINK))
+                    .centered()
+                    .render(block_areas[i + offset], buf);
+            } else {
+                Paragraph::new(view)
+                    .centered()
+                    .render(block_areas[i + offset], buf);
+            }
+        }
+
+        // Invalid block placement
+        if self.show_conflict_popup {
+            Clear.render(areas[0], buf);
+            let conflict_inner = Text::from("It doesn't fit!").red();
+            let conflict_outer = Paragraph::new(conflict_inner).centered();
+            let popup_area = create_popup_area(area, 60, 80);
+            conflict_outer.render(popup_area, buf);
         }
 
         // Game Over
@@ -431,5 +431,34 @@ impl Widget for &App {
             let help_txt = Text::from(format!("{}", "Press ENTER to play again.")).blue();
             Paragraph::new(help_txt).centered().render(areas[4], buf);
         }
+
+        // Outermost layout
+        let title = Line::from(" Block TUI ".bold());
+        let score = Line::from(format!(" Current Score: {} ", self.game.score).bold());
+        let instructions = Line::from(vec![
+            " Quit ".into(),
+            "<q> ".blue().bold(),
+            " Movement ".into(),
+            "<h,j,k,l> ".blue().bold(),
+            " Cycle Block Selection ".into(),
+            "<n> ".blue().bold(),
+            " Place Block ".into(),
+            "<Space> ".blue().bold(),
+        ]);
+        let block = Block::bordered()
+            .title(title.left_aligned())
+            .title(score.centered())
+            .title_bottom(instructions.centered())
+            .border_set(border::THICK)
+            .border_type(BorderType::Rounded);
+        Paragraph::default().block(block).render(area, buf);
     }
+}
+
+fn create_popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
+    let vertical = Layout::vertical([Constraint::Percentage(percent_y)]).flex(Flex::Center);
+    let horizontal = Layout::horizontal([Constraint::Percentage(percent_x)]).flex(Flex::Center);
+    let [area] = vertical.areas(area);
+    let [area] = horizontal.areas(area);
+    area
 }
