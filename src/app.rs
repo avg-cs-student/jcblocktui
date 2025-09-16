@@ -1,4 +1,4 @@
-use color_eyre::Result;
+use anyhow::{Result, bail};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use jcblocks::{
     block::{self, Point},
@@ -15,6 +15,8 @@ use ratatui::{
     widgets::{Block, BorderType, Clear, Paragraph, Widget},
 };
 
+use crate::scoreboard::{LocalScoreBoard, Scoreboard};
+
 use super::block_index::*;
 use super::config::*;
 
@@ -30,10 +32,11 @@ pub struct App {
     board_width: i32,
     board_height: i32,
     show_conflict_popup: bool,
+    scoreboard: LocalScoreBoard,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let game = Game::default();
 
         // block coordinates include negative numbers, so having these as i32 just reduces the
@@ -53,7 +56,17 @@ impl App {
             y: board_height / 2 - 1,
         };
 
-        Self {
+        let exe_path = std::env::current_exe()?;
+        let exe_dir = match exe_path.parent() {
+            Some(dir) => dir,
+            None => bail!("Cannot determine executable directory"),
+        };
+
+        // Create database path relative to executable
+        let db_path = exe_dir.join("app.db");
+        let scoreboard = LocalScoreBoard::new(5, db_path)?;
+
+        Ok(Self {
             exit: false,
             game_over: false,
             game,
@@ -64,7 +77,8 @@ impl App {
             board_width,
             board_height,
             show_conflict_popup: false,
-        }
+            scoreboard,
+        })
     }
 
     fn reset(&mut self) {
@@ -88,9 +102,6 @@ impl App {
     }
 
     fn draw(&self, frame: &mut Frame) {
-        if self.game_over {
-            frame.render_widget(Clear, frame.area());
-        }
         frame.render_widget(self, frame.area());
     }
 
@@ -99,14 +110,14 @@ impl App {
             // it's important to check that the event is a key press event as
             // crossterm also emits key release and repeat events on Windows.
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event)
+                self.handle_key_event(key_event)?
             }
             _ => {}
         };
         Ok(())
     }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent) {
+    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
         // moving a block could result in part of it escaping the playing board, this helper is for
         // checking that condition
         let is_selected_block_within_boundary = |cursor: &Point| {
@@ -125,7 +136,7 @@ impl App {
         self.show_conflict_popup = false;
         match key_event.code {
             // quit
-            KeyCode::Char('q') => self.exit(),
+            KeyCode::Char('q') => Ok(self.exit()),
 
             // place block
             KeyCode::Char(' ') => {
@@ -156,16 +167,21 @@ impl App {
                         }
                     }
                     self.game_over = !can_fit_at_least_one;
+                    if self.game_over {
+                        self.scoreboard.add(env!("USER"), self.game.score as i64)?;
+                    }
                     self.cursor_position = self.center.clone();
                 } else {
                     self.show_conflict_popup = true;
                 }
+
+                Ok(())
             }
 
             // cursor left
             KeyCode::Char('h') | KeyCode::Left => {
                 if self.game_over {
-                    return;
+                    return Ok(());
                 }
 
                 let maybe_new_cursor_position = Point {
@@ -175,12 +191,14 @@ impl App {
                 if is_selected_block_within_boundary(&maybe_new_cursor_position) {
                     self.cursor_position = maybe_new_cursor_position;
                 }
+
+                Ok(())
             }
 
             // cursor down
             KeyCode::Char('j') | KeyCode::Down => {
                 if self.game_over {
-                    return;
+                    return Ok(());
                 }
 
                 let maybe_new_cursor_position = Point {
@@ -190,12 +208,14 @@ impl App {
                 if is_selected_block_within_boundary(&maybe_new_cursor_position) {
                     self.cursor_position = maybe_new_cursor_position;
                 }
+
+                Ok(())
             }
 
             // cursor up
             KeyCode::Char('k') | KeyCode::Up => {
                 if self.game_over {
-                    return;
+                    return Ok(());
                 }
 
                 let maybe_new_cursor_position = Point {
@@ -205,12 +225,14 @@ impl App {
                 if is_selected_block_within_boundary(&maybe_new_cursor_position) {
                     self.cursor_position = maybe_new_cursor_position;
                 }
+
+                Ok(())
             }
 
             // cursor right
             KeyCode::Char('l') | KeyCode::Right => {
                 if self.game_over {
-                    return;
+                    return Ok(());
                 }
 
                 let maybe_new_cursor_position = Point {
@@ -220,57 +242,84 @@ impl App {
                 if is_selected_block_within_boundary(&maybe_new_cursor_position) {
                     self.cursor_position = maybe_new_cursor_position;
                 }
+
+                Ok(())
             }
 
             // cycle block selection
             KeyCode::Char('n') => {
                 if self.game_over {
-                    return;
+                    return Ok(());
                 }
 
                 self.selected.cycle();
                 self.cursor_position = self.center.clone();
+
+                Ok(())
             }
 
             KeyCode::Enter => {
                 if self.game_over {
                     self.reset();
                 }
+                Ok(())
             }
-            _ => {}
+            _ => Ok(()),
         }
     }
 
-    fn exit(&mut self) {
-        self.exit = true;
+    fn render_local_scoreboard(&self, area: Rect, buf: &mut Buffer) {
+        let content = self
+            .scoreboard
+            .all()
+            .iter()
+            .take(3)
+            .map(|high_score| {
+                format!(
+                    "{:<6} {:7}",
+                    &high_score.when.to_string()[..7],
+                    high_score.score
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        Paragraph::new(Text::from(format!("Personal Best:\n{}", content)))
+            .yellow()
+            .centered()
+            .render(area, buf);
     }
-}
 
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        // Main content
-        let areas = Layout::vertical([
-            // spacing or game over text
-            Constraint::Percentage(10),
-            // game board
-            Constraint::Length(self.game.canvas.rows as u16),
-            // spacer
-            Constraint::Percentage(0),
-            Constraint::Percentage(10),
-            // next blocks
-            Constraint::Percentage(14),
-            // nominally empty, useful for dumping debug info
-            Constraint::Percentage(76),
-        ])
-        .vertical_margin(5)
-        .flex(Flex::Center)
-        .split(area);
+    // presently unused
+    fn _render_global_scoreboard(&self, area: Rect, buf: &mut Buffer) {
+        let content = self
+            .scoreboard
+            .all()
+            .iter()
+            .take(3)
+            .map(|high_score| {
+                format!(
+                    "{:<6} {:7} {:>10}",
+                    &high_score.when.to_string()[..7],
+                    high_score.score,
+                    high_score.name
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
 
+        Paragraph::new(Text::from(format!("World Best:\n{}", content)))
+            .yellow()
+            .centered()
+            .render(area, buf);
+    }
+
+    fn render_game_board(&self, area: Rect, buf: &mut Buffer) {
         // Gameboard layout
         let [game_container] =
             Layout::horizontal([Constraint::Length((self.board_width * 2) as u16)])
                 .flex(ratatui::layout::Flex::Center)
-                .areas(areas[1]);
+                .areas(area);
 
         let game_rows = Layout::vertical(vec![Constraint::default(); self.board_height as usize])
             .flex(ratatui::layout::Flex::Center)
@@ -371,7 +420,9 @@ impl Widget for &App {
                 .render(*col, buf);
             }
         }
+    }
 
+    fn render_block_selector(&self, area: Rect, buf: &mut Buffer) {
         // remaining blocks view
         let block_areas = Layout::horizontal([
             Constraint::Percentage(23), // spacing
@@ -381,7 +432,7 @@ impl Widget for &App {
             Constraint::Percentage(23), // spacing
         ])
         .flex(Flex::Center)
-        .split(areas[4]);
+        .split(area);
 
         // account for spacing
         let offset = 1;
@@ -406,33 +457,75 @@ impl Widget for &App {
                     .render(block_areas[i + offset], buf);
             }
         }
+    }
 
-        // Invalid block placement
+    fn exit(&mut self) {
+        self.exit = true;
+    }
+}
+
+impl Widget for &App {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let debug_area_constraint = Constraint::Percentage(56);
+        let block_selector_constraint = Constraint::Percentage(24);
+        let scoreboard_constraint = Constraint::Percentage(10);
+        let vspace_constraint = Constraint::Percentage(10);
+        let game_board_constraint = Constraint::Min(self.board_height as u16);
+
+        // split the screen in horizontal slices
+        let top_to_bot_view_areas = Layout::vertical([
+            scoreboard_constraint,
+            vspace_constraint,
+            game_board_constraint,
+            vspace_constraint,
+            block_selector_constraint,
+            debug_area_constraint,
+        ])
+        .vertical_margin(5)
+        .flex(Flex::Center)
+        .split(area);
+
+        let [local_scoreboard_area, _, _global_scoreboard_area] = Layout::horizontal([
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+        ])
+        .horizontal_margin(5)
+        .areas(top_to_bot_view_areas[0]);
+
+        self.render_local_scoreboard(local_scoreboard_area, buf);
+        // todo
+        // self.render_global_scoreboard(global_scoreboard_area, buf);
+        self.render_game_board(top_to_bot_view_areas[2], buf);
+        self.render_block_selector(top_to_bot_view_areas[4], buf);
+
+        // Warn the user when attempting invalid block placement
         if self.show_conflict_popup {
-            Clear.render(areas[0], buf);
+            Clear.render(top_to_bot_view_areas[1], buf);
             let conflict_inner = Text::from("It doesn't fit!").red();
             let conflict_outer = Paragraph::new(conflict_inner).centered();
             let popup_area = create_popup_area(area, 60, 80);
             conflict_outer.render(popup_area, buf);
         }
 
-        // Game Over
+        // Game Over - clear everything except the game board.
         if self.game_over {
-            Clear.render(areas[0], buf);
-            Clear.render(areas[2], buf);
-            Clear.render(areas[3], buf);
-            Clear.render(areas[4], buf);
+            Clear.render(top_to_bot_view_areas[0], buf);
+            Clear.render(top_to_bot_view_areas[3], buf);
+            Clear.render(top_to_bot_view_areas[4], buf);
+            Clear.render(top_to_bot_view_areas[5], buf);
 
             let game_over_str = Text::from(format!("{}", "GAME OVER")).red();
             Paragraph::new(game_over_str)
                 .centered()
-                .render(areas[0], buf);
+                .render(top_to_bot_view_areas[1], buf);
 
             let help_txt = Text::from(format!("{}", "Press ENTER to play again.")).blue();
-            Paragraph::new(help_txt).centered().render(areas[4], buf);
+            Paragraph::new(help_txt)
+                .centered()
+                .render(top_to_bot_view_areas[5], buf);
         }
 
-        // Outermost layout
         let title = Line::from(" Block TUI ".bold());
         let score = Line::from(format!(" Current Score: {} ", self.game.score).bold());
         let instructions = Line::from(vec![
