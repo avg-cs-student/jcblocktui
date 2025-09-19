@@ -1,9 +1,9 @@
+use anyhow::Result;
 use jcblocktui::app::App;
 
-fn main() -> color_eyre::Result<()> {
-    color_eyre::install()?;
+fn main() -> Result<()> {
     let terminal = ratatui::init();
-    let result = App::new().run(terminal);
+    let result = App::new()?.run(terminal);
     ratatui::restore();
     result
 }

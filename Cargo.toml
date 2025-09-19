@@ -1,6 +1,6 @@
 [package]
 name = "jcblocktui"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 authors = ["Justin Cromer"]
 description = "A TUI Block Game"
@@ -9,7 +9,9 @@ repository = "https://github.com/avg-cs-student/jcblocktui"
 license = "MIT"
 
 [dependencies]
+anyhow = "1.0.100"
+chrono = { version = "0.4.42", features = ["serde"] }
 crossterm = "0.28.1"
-ratatui = "0.29.0"
-color-eyre = "0.6.3"
 jcblocks =  "0.1.1"
+ratatui = "0.29.0"
+rusqlite = { version = "0.37.0", features = ["chrono"] }
