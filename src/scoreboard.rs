@@ -28,15 +28,7 @@ impl PartialEq<HighScore> for HighScore {
 
 impl PartialOrd for HighScore {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.score > other.score {
-            return Some(Ordering::Greater);
-        }
-
-        if self.score < other.score {
-            return Some(Ordering::Less);
-        }
-
-        Some(Ordering::Equal)
+        Some(self.cmp(other))
     }
 }
 
@@ -138,11 +130,10 @@ impl Scoreboard for MinimalScoreboard {
     fn add(&mut self, who: &str, score: i64) -> Result<bool> {
         let utc_now = Utc::now();
 
-        if let Some(worst) = self.last() {
-            if worst.score > score {
+        if let Some(worst) = self.last()
+            && worst.score > score {
                 return Ok(false);
             }
-        }
 
         if self.high_scores.capacity() == self.high_scores.len() {
             self.high_scores.pop();
