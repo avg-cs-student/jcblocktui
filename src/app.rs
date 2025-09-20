@@ -105,7 +105,10 @@ impl App {
 
             // quit
             KeyCode::Char('q') => {
-                return Ok(self.exit());
+                return {
+                    self.exit();
+                    Ok(())
+                };
             }
 
             _ => self.game.handle_key_event(key_event)?,

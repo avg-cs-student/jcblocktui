@@ -189,9 +189,9 @@ impl Blast {
                 };
 
                 // FIXME: game over screen isnt my favorite.
-                Paragraph::new(|| -> Text<'_> {
+                Paragraph::new({
                     if self.game_over { repr.gray() } else { repr }
-                }())
+                })
                 .centered()
                 .render(*col, buf);
             }
@@ -268,7 +268,7 @@ impl TuiGame for Blast {
                     // yes, remove is highly inefficient, but this vector is always very tiny,
                     // so bite me.
                     self.blocks.remove(self.selected.place());
-                    if self.blocks.len() < 1 {
+                    if self.blocks.is_empty() {
                         match self.game.generate_blocks(NUM_BLOCKS_PER_TURN) {
                             Some(blocks) => self.blocks = blocks,
                             None => unreachable!("There is always a combination that will work."),
@@ -278,7 +278,7 @@ impl TuiGame for Blast {
                     // check if the game can make progress.
                     let mut can_fit_at_least_one = false;
                     for block in self.blocks.iter() {
-                        if self.game.canvas.can_fit(&block).is_some() {
+                        if self.game.canvas.can_fit(block).is_some() {
                             can_fit_at_least_one = true;
                             break;
                         }
@@ -444,12 +444,12 @@ impl Widget for &Blast {
             Clear.render(top_to_bot_view_areas[4], buf);
             Clear.render(top_to_bot_view_areas[5], buf);
 
-            let game_over_str = Text::from(format!("{}", "GAME OVER")).red();
+            let game_over_str = Text::from("GAME OVER".to_string()).red();
             Paragraph::new(game_over_str)
                 .centered()
                 .render(top_to_bot_view_areas[1], buf);
 
-            let help_txt = Text::from(format!("{}", "Press ENTER to play again.")).blue();
+            let help_txt = Text::from("Press ENTER to play again.".to_string()).blue();
             Paragraph::new(help_txt)
                 .centered()
                 .render(top_to_bot_view_areas[5], buf);
